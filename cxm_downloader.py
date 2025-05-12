@@ -58,9 +58,16 @@ class CXMDataLoader:
     def load_tool_calling() -> dict:
         ds = load_dataset("sprinklr-huggingface/CXM_Arena", "Tool_Calling")
         ds_a = load_dataset("sprinklr-huggingface/CXM_Arena", "Articles")
+        ds_tools = load_dataset("sprinklr-huggingface/CXM_Arena", "Tools_Description")
+
+        tools_dict = {}
+        for _, row in pd.DataFrame(ds_tools['train']).iterrows():
+            tools_dict[row.Name] = eval(row.Definition)
+
         return {
             "conversation_df": pd.DataFrame(ds["train"]),
             "articles_df": pd.DataFrame(ds_a["multi_turn_articles"]),
+            "tools_dict": tools_dict,
         }
 
     @classmethod

@@ -1,4 +1,5 @@
 import ast
+import json
 from typing import Any, Iterable, List, Sequence, Tuple, Union
 from collections import defaultdict
 
@@ -17,6 +18,19 @@ class CXMEvaluator:
             return ast.literal_eval(obj)
         except Exception:
             return obj
+
+    @staticmethod
+    def _parse_json(s, default_json=None):
+        try:
+            first = s.find('{')
+            last = s.rfind('}')
+            if first == -1 or last == -1 or first > last:
+                raise ValueError("Input does not contain a valid JSON object based on '{' and '}'")
+            json_str = s[first:last + 1]
+            return json.loads(json_str)
+        except Exception as e:
+            print("Parsing JSON failed with error: {}".format(e))
+            return default_json if default_json else None
 
     @staticmethod
     def _assert_length_match(n_true: int, n_pred: int, name: str) -> None:
@@ -162,6 +176,68 @@ class CXMEvaluator:
             else:
                 matches += tv == pv
         return matches / len(df) if len(df) else 0.0
+
+    def get_kb_content(self, articles_df, kb_id):
+        rows = articles_df.loc[articles_df.document_id == kb_id]
+        return rows.document_content.tolist()[0]
+
+    async def evaluate_article_search_results(self, article_search_input, vertex_ai_helper, result_kbs_ids, result_answers, model_name='gemini-1.5-pro'):
+        questions_df = article_search_input["questions_df"]
+        articles_df = article_search_input["articles_df"]
+        all_faqbot_classification_prompts = []
+
+        i = 0
+        faqbot_classification_template = open('./prompts/article_search_evaluation.txt').read()
+
+        for _, row in questions_df.iterrows():
+            kb_id_true = row['True KB Id']
+            kb_id_pred = result_kbs_ids[i]
+
+            curr_prompt = faqbot_classification_template.format(
+                row.query,
+                row.answer,
+                self.get_kb_content(articles_df, kb_id_true),
+                'NONE\n' if kb_id_pred == kb_id_true else self.get_kb_content(articles_df, kb_id_pred),
+                result_answers[i]
+            )
+            i += 1
+            all_faqbot_classification_prompts.append(curr_prompt)
+
+        classification_results = await vertex_ai_helper.chat_batch(all_faqbot_classification_prompts, model_name=model_name)
+        classification_results_parsed = [x.split(':', 1)[0].lower() for x in classification_results]
+
+        valid_classes = ['correct', 'hallucinated', 'incomplete', 'refusal']
+        return [x if x in valid_classes else 'parsing_error' for x in classification_results_parsed]
+
+    async def evaluate_multi_turn_rag_results(self, multi_turn_rag_input, vertex_ai_helper, result_kbs_ids, result_answers, model_name='gemini-1.5-pro'):
+        conversation_df = multi_turn_rag_input["conversation_df"]
+        articles_df = multi_turn_rag_input["articles_df"]
+        all_rag_classification_prompts = []
+
+        i = 0
+        multi_turn_rag_evaluation_template = open('./prompts/multi_turn_rag_evaluation.txt').read()
+
+        for _, row in conversation_df.iterrows():
+            kb_id_true = self._safe_eval(row['kb_ids'])
+            kb_id_pred = result_kbs_ids[i]
+            kb_id_relevant = list(set(kb_id_pred) - set(kb_id_true))
+
+            line_br = '-'*50
+            all_kbs_true = f"\n{line_br}\n".join([self.get_kb_content(articles_df, x) for x in kb_id_true])
+            all_kbs_relevant = f"\n{line_br}\n".join([self.get_kb_content(articles_df, x) for x in kb_id_relevant])
+
+            curr_prompt = multi_turn_rag_evaluation_template.format(
+                conversation_context = row.conversation_context,
+                llm_response = result_answers[i],
+                true_kbs = all_kbs_true,
+                relevant_kbs = all_kbs_relevant,
+            )
+            i += 1
+            all_rag_classification_prompts.append(curr_prompt)
+
+        classification_results = await vertex_ai_helper.chat_batch(all_rag_classification_prompts, model_name=model_name)
+        classification_results_parsed = [self._parse_json(x, default_json={'Category': 'parsing_error'})['Category'].lower() for x in classification_results]
+        return classification_results_parsed
 
     def evaluate(self, task_key: str, inp: dict, results: Sequence, **kwargs):
         key = task_key.upper()

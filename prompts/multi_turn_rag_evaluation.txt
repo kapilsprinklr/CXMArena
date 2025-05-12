@@ -1,0 +1,62 @@
+**Objective:**
+You are an expert evaluator analyzing a specific LLM response. Your primary goal is to determine if this response is appropriate, accurate, and faithful, considering both the preceding conversation context and the provided set of knowledge bases (KBs). You must assess if the response is:
+1. Grounded in the provided knowledge sources, distinguishing between information derived from 'True KBs' versus 'Relevant KBs'.
+2. A relevant and coherent reply within the dialogue, appropriately addressing the user's last input in the provided context.
+3. Sufficiently comprehensive based only on the information available in the knowledge bases relevant to the user's need expressed in the context.
+
+**Input Data:**
+
+1.  Conversation Context: The sequence of turns between the user (U) and the LLM (L) that occurred before the LLM response you need to evaluate.
+```
+{conversation_context}
+```
+
+2.  LLM Response to Evaluate: The specific LLM message whose quality you need to assess. This response directly follows the last turn in the 'Conversation Context'.
+```
+{llm_response}
+```
+
+3.  True Knowledge Base(s): The primary source(s) confirmed to contain the definitive accurate information potentially relevant to the conversation and the response. Grounding in these sources is required for a 'Correct' evaluation.
+```
+{true_kbs}
+```
+
+4.  Relevant Knowledge Bases: Additional source(s) provided, which may or may not contain supplementary relevant information. These may differ from the True KBs. Treat all provided KBs (True and Relevant) as the *potential* sources of truth for factual grounding, but prioritize True KBs for correctness.
+```
+{relevant_kbs}
+```
+
+**Evaluation Task:**
+
+Carefully analyze the LLM Response to Evaluate. Consider the Conversation Context to understand the flow of the dialogue and what the user was asking or stating immediately prior. Compare the factual claims within the LLM Response to Evaluate against the information contained within both the True Knowledge Base(s) and Relevant Knowledge Bases, noting any discrepancies. Assess its relevance and coherence as a reply to the last turn in the context. Provide detailed reasoning first, clearly referencing specific portions from the provided input data and KBs. Then determine a single category from the four options (Correct, Incorrect, Hallucinated, Refusal) that best describes the performance of the LLM Response to Evaluate, following the reasoning.
+
+**Evaluation Categories & Criteria:**
+
+Correct:
+- Faithfulness to True KBs: All factual claims in the evaluated response are directly supported by evidence within the provided **True Knowledge Base(s)**.
+- Conversational Relevance & Coherence: The evaluated response directly addresses the user's last input (found at the end of the Conversation Context) and is a logical continuation of the dialogue.
+- No Extraneous Information: The evaluated response does not introduce facts, entities, or details not present in *any* of the provided knowledge bases (True or Relevant). Rephrasing or synthesizing information strictly from the provided KBs is permissible.
+- The response is not Incorrect, Hallucinated, or a Refusal.
+
+Incorrect:
+- Grounded in Relevant KBs, but Contradicts True KBs: The evaluated response contains at least one specific factual statement or detail that is supported by information within the **Relevant Knowledge Base(s)**, but this information contradicts or differs from the information present in the **True Knowledge Base(s)**. The response relies on the conflicting information from the Relevant KBs instead of the True KBs.
+
+Hallucinated:
+- Unsupported Claims: The evaluated response contains at least one specific factual statement, detail, or entity that cannot be verified or is contradicted by the information within **any** of the provided knowledge bases (**neither True KBs nor Relevant KBs**). The extraneous information appears fabricated relative to the provided sources, even if plausible conversationally.
+
+Refusal:
+- Explicit Decline: The evaluated response explicitly states it cannot answer or continue regarding the user's last input in the context.
+- Topic Evasion / Generic Non-Answer: The evaluated response avoids addressing the user's last input, gives a vague or irrelevant reply, or inappropriately tries to change the subject without justification, effectively refusing to meaningfully engage with the last turn of the context.
+
+**Output Format: **
+Provide your response strictly as a JSON object in the following format:
+
+```json
+{{
+ "Reasoning": "<Provide detailed reasoning justifying your evaluation, referencing specific parts of the LLM Response, Conversation Context, and Knowledge Bases. Explain which KBs (True, Relevant, or neither) support or contradict the response, leading to your category choice.>",
+ "Category": "<Your chosen category: Correct, Incorrect, Hallucinated, or Refusal on the basis of reasoning>"
+}}
+```
+
+**Instruction:**
+Perform a meticulous analysis of the LLM Response to Evaluate. Use the Conversation Context primarily to understand relevance and what the user asked for. Judge factual grounding strictly against the provided Knowledge Bases, paying close attention to the distinction between True KBs and Relevant KBs. Provide detailed reasoning first, clearly referencing specific portions from the provided input data and KBs. Then assign the single best category for the evaluated response.
