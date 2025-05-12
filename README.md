@@ -6,7 +6,7 @@ This repository provides tools to **download, prepare, and evaluate datasets** f
 - `cxm_evaluator.py`: Evaluate model predictions using task-specific metrics.
 
 ## Features
-- Easy access to multiple CXM Arena tasks (Agent Quality, KB Denoising, Article Search, Intent Prediction, Multi-Turn RAG, Tool Calling)
+- Easy access to multiple CXM Arena tasks (Agent Quality, KB Refinement, Article Search, Intent Prediction, Multi-Turn RAG, Tool Calling)
 - Consistent data loading interface
 - Task-specific evaluation metrics
 
@@ -33,7 +33,7 @@ This repository provides tools to **download, prepare, and evaluate datasets** f
 ```python
 from cxm_downloader import CXMDataLoader
 
-data = CXMDataLoader.load("AQM")  # or "KB_DENOISING", "ARTICLE_SEARCH", etc.
+data = CXMDataLoader.load("AQM")  # or "KB_REFINEMENT", "ARTICLE_SEARCH", etc.
 print(data.keys())
 ```
 

@@ -6,23 +6,23 @@ class CXMDataLoader:
     """
     Download and return the inputs for each task.
     Use load(task_key) with one of:
-      "AQM", "KB_DENOISING", "ARTICLE_SEARCH",
+      "AQM", "KB_REFINEMENT", "ARTICLE_SEARCH",
       "INTENT_PREDICTION", "MULTI_TURN", "TOOL_CALLING"
     """
 
     @staticmethod
     def load_agent_quality_adherence() -> dict:
         ds = load_dataset("sprinklr-huggingface/CXM_Arena", "Agent_Quality_Adherence")
-        return {"df": pd.DataFrame(ds["conversations"])}
+        return {"df": pd.DataFrame(ds["train"])}
 
     @staticmethod
-    def load_article_denoising() -> dict:
-        ds_kb = load_dataset("sprinklr-huggingface/CXM_Arena", "KB_Denoising")
+    def load_article_refinement() -> dict:
+        ds_kb = load_dataset("sprinklr-huggingface/CXM_Arena", "KB_Refinement")
         ds_articles = load_dataset("sprinklr-huggingface/CXM_Arena", "Articles")
         return {
             "similarity_df": pd.DataFrame(ds_kb["similarity_pairs"]),
             "contradictory_df": pd.DataFrame(ds_kb["contradictory_pairs"]),
-            "articles_df": pd.DataFrame(ds_articles["KB_denoising_articles"]),
+            "articles_df": pd.DataFrame(ds_articles["KB_refinement_articles"]),
         }
 
     @staticmethod
@@ -30,7 +30,7 @@ class CXMDataLoader:
         ds_q = load_dataset("sprinklr-huggingface/CXM_Arena", "Article_Search")
         ds_a = load_dataset("sprinklr-huggingface/CXM_Arena", "Articles")
         return {
-            "questions_df": pd.DataFrame(ds_q["questions"]),
+            "questions_df": pd.DataFrame(ds_q["train"]),
             "articles_df": pd.DataFrame(ds_a["article_search_articles"]),
         }
 
@@ -39,7 +39,7 @@ class CXMDataLoader:
         ds_conv = load_dataset("sprinklr-huggingface/CXM_Arena", "Intent_Prediction")
         ds_tx = load_dataset("sprinklr-huggingface/CXM_Arena", "Taxonomy")
         return {
-            "conversation_df": pd.DataFrame(ds_conv["conversations"]),
+            "conversation_df": pd.DataFrame(ds_conv["train"]),
             "Taxonomy_1": pd.DataFrame(ds_tx["taxonomy_1"]),
             "Taxonomy_2": pd.DataFrame(ds_tx["taxonomy_2"]),
             "Taxonomy_3": pd.DataFrame(ds_tx["taxonomy_3"]),
@@ -50,7 +50,7 @@ class CXMDataLoader:
         ds = load_dataset("sprinklr-huggingface/CXM_Arena", "Multi_Turn")
         ds_a = load_dataset("sprinklr-huggingface/CXM_Arena", "Articles")
         return {
-            "conversation_df": pd.DataFrame(ds["article_recall"]),
+            "conversation_df": pd.DataFrame(ds["train"]),
             "articles_df": pd.DataFrame(ds_a["multi_turn_articles"]),
         }
 
@@ -59,7 +59,7 @@ class CXMDataLoader:
         ds = load_dataset("sprinklr-huggingface/CXM_Arena", "Tool_Calling")
         ds_a = load_dataset("sprinklr-huggingface/CXM_Arena", "Articles")
         return {
-            "conversation_df": pd.DataFrame(ds["tool_calling"]),
+            "conversation_df": pd.DataFrame(ds["train"]),
             "articles_df": pd.DataFrame(ds_a["multi_turn_articles"]),
         }
 
@@ -68,8 +68,8 @@ class CXMDataLoader:
         key = task_key.upper()
         if key == "AQM":
             return cls.load_agent_quality_adherence()
-        if key == "KB_DENOISING":
-            return cls.load_article_denoising()
+        if key == "KB_REFINEMENT":
+            return cls.load_article_refinement()
         if key == "ARTICLE_SEARCH":
             return cls.load_article_search()
         if key == "INTENT_PREDICTION":

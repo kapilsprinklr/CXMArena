@@ -47,14 +47,14 @@ class CXMEvaluator:
             y_p.extend(extract(p_blk))
         return self._exact_match_precision(y_t, y_p)
 
-    def article_denoising_metrics(
+    def article_refinement_metrics(
         self, inp: dict, results: Sequence, pair_key: str = "contradictory_df"
     ) -> Tuple[float, float, float]:
         df = inp[pair_key]
         true_pairs = {tuple(self._safe_eval(x)) for x in df["Pairs"]}
         pred_pairs = {tuple(self._safe_eval(x)) for x in results}
         if not pred_pairs:
-            raise ValueError("No predictions provided for denoising metrics.")
+            raise ValueError("No predictions provided for refinement metrics.")
         tp = len(true_pairs & pred_pairs)
         prec = tp / len(pred_pairs)
         rec = tp / len(true_pairs) if true_pairs else 0.0
@@ -102,8 +102,8 @@ class CXMEvaluator:
         key = task_key.upper()
         if key == "AQM":
             return self.aqm_accuracy(inp, results)
-        if key == "KB_DENOISING":
-            return self.article_denoising_metrics(inp, results, **kwargs)
+        if key == "KB_REFINEMENT":
+            return self.article_refinement_metrics(inp, results, **kwargs)
         if key == "ARTICLE_SEARCH":
             return self.article_search_precision(inp, results)
         if key == "INTENT_PREDICTION":
