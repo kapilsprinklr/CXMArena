@@ -10,8 +10,7 @@ cxm_loader = CXMDataLoader()
 cxm_evaluator = CXMEvaluator()
 
 # 1) Agent Quality Measurement (AQM)
-# aqm_input = cxm_loader.load("AQM")
-aqm_input = pkl.load(open("aqm_input.pkl","rb"))
+aqm_input = cxm_loader.load("AQM")
 aqm_dataframe = aqm_input["df"]
 aqm_random_predictions = [random.choices(["yes", "no"], k=len(eval(answers))) for answers in aqm_dataframe["question_answers"]]
 print("Random AQM:", cxm_evaluator.evaluate("AQM", aqm_input, aqm_random_predictions))
@@ -23,7 +22,6 @@ predictions = asyncio.run(predictor.predict("AQM",aqm_input2,"gemini-2.0-flash-0
 print(f"Sample predictions are {predictions[0]}")
 print("Actual AQM using 10 inputs:", cxm_evaluator.evaluate("AQM", aqm_input2, predictions))
 
-exit()
 
 # 2) Knowledge Base Denoising (KB_DENOISING)
 kb_denoising_input = cxm_loader.load("KB_DENOISING")
