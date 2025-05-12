@@ -1,5 +1,6 @@
 import ast
 from typing import Any, Iterable, List, Sequence, Tuple, Union
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -46,6 +47,68 @@ class CXMEvaluator:
             y_t.extend(extract(t_blk))
             y_p.extend(extract(p_blk))
         return self._exact_match_precision(y_t, y_p)
+
+    def aqm_conversation_level_accuracy(self, inp: dict, results: list):
+        """
+        Returns:
+            - conversation_level_accuracy: proportion of conversations 100% correct
+            - question_level_accuracy: overall proportion of questions correct
+        """
+        df = inp["df"]
+
+        self._assert_length_match(len(df), len(results), "aqm results")
+
+        # --- Extract answers as in your original code ---
+        def extract(block):
+            b = ast.literal_eval(block) if isinstance(block, str) else block
+            if isinstance(b, list) and b and isinstance(b[0], dict):
+                return [d["Answer"].lower() for d in b]
+            if isinstance(b, list) and b and isinstance(b[0], str):
+                return [s.lower() for s in b]
+            raise TypeError("aqm_accuracy: expected list of dicts or strings")
+
+        # Row-level true/pred
+        true_flat, pred_flat = [], []
+        for t_blk, p_blk in zip(df["question_answers"], results):
+            true_flat.append(extract(t_blk))
+            pred_flat.append(extract(p_blk))
+
+        # Gather conversation_id mapping
+        conversation_id_to_indices = defaultdict(list)
+        for idx, cid in enumerate(df["conversation_id"]):
+            conversation_id_to_indices[cid].append(idx)
+
+        # --- Conversation-level accuracy ---
+        n_conversations = len(conversation_id_to_indices)
+        n_convo_correct = 0
+
+        for cid, indices in conversation_id_to_indices.items():
+            all_correct = True
+            for idx in indices:
+                if true_flat[idx] != pred_flat[idx]:
+                    all_correct = False
+                    break
+            if all_correct:
+                n_convo_correct += 1
+
+        conversation_level_accuracy = n_convo_correct / n_conversations if n_conversations > 0 else 0.0
+
+        # --- Question-level accuracy (flatten all arrays) ---
+        q_total = 0
+        q_correct = 0
+        for tlist, plist in zip(true_flat, pred_flat):
+            if len(tlist) != len(plist):
+                # Mis-prediction of count, skip or count only where matching
+                min_len = min(len(tlist), len(plist))
+            else:
+                min_len = len(tlist)
+            for i in range(min_len):
+                q_total += 1
+                if tlist[i] == plist[i]:
+                    q_correct += 1
+        question_level_accuracy = q_correct / q_total if q_total > 0 else 0.0
+
+        return conversation_level_accuracy, question_level_accuracy
 
     def article_refinement_metrics(
         self, inp: dict, results: Sequence, pair_key: str = "contradictory_df"
@@ -101,7 +164,8 @@ class CXMEvaluator:
     def evaluate(self, task_key: str, inp: dict, results: Sequence, **kwargs):
         key = task_key.upper()
         if key == "AQM":
-            return self.aqm_accuracy(inp, results)
+            return self.aqm_conversation_level_accuracy(inp, results)
+            # return self.aqm_accuracy(inp, results)
         if key == "KB_REFINEMENT":
             return self.article_refinement_metrics(inp, results, **kwargs)
         if key == "ARTICLE_SEARCH":

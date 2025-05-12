@@ -1,6 +1,7 @@
 import random
 from cxm_downloader import CXMDataLoader
 from cxm_evaluator import CXMEvaluator
+from cxm_predictor import CXMPredictor
 
 # Initialize loader and evaluator
 cxm_loader = CXMDataLoader()
@@ -10,19 +11,27 @@ cxm_evaluator = CXMEvaluator()
 aqm_input = cxm_loader.load("AQM")
 aqm_dataframe = aqm_input["df"]
 aqm_random_predictions = [random.choices(["yes", "no"], k=len(eval(answers))) for answers in aqm_dataframe["question_answers"]]
-print("AQM:", cxm_evaluator.evaluate("AQM", aqm_input, aqm_random_predictions))
+print("Random AQM:", cxm_evaluator.evaluate("AQM", aqm_input, aqm_random_predictions))
 
-# 2) Knowledge Base Refinement (KB_REFINEMENT)
-kb_refinement_input = cxm_loader.load("KB_REFINEMENT")
-contradictory_pairs_df = kb_refinement_input["contradictory_df"]
+aqm_input2 = {"df":aqm_dataframe[:10]}
+print("Running AQM Predictor")
+predictor = CXMPredictor()
+predictions = predictor.predict("AQM", aqm_input2)
+print("Actual AQM using 10 inputs:", cxm_evaluator.evaluate("AQM", aqm_input2, predictions))
+
+exit()
+
+# 2) Knowledge Base Denoising (KB_DENOISING)
+kb_denoising_input = cxm_loader.load("KB_DENOISING")
+contradictory_pairs_df = kb_denoising_input["contradictory_df"]
 all_articles = list({article for pair in contradictory_pairs_df["Pairs"] for article in pair})
-kb_refinement_random_predictions = [random.choices(all_articles, k=2) for _ in range(len(contradictory_pairs_df))]
-print("KB_REFINEMENT P/R/F1:", cxm_evaluator.evaluate("KB_REFINEMENT", kb_refinement_input, kb_refinement_random_predictions))
+kb_denoising_random_predictions = [random.choices(all_articles, k=2) for _ in range(len(contradictory_pairs_df))]
+print("KB_DENOISING P/R/F1:", cxm_evaluator.evaluate("KB_DENOISING", kb_denoising_input, kb_denoising_random_predictions))
 
-similarity_pairs_df = kb_refinement_input["similarity_df"]
+similarity_pairs_df = kb_denoising_input["similarity_df"]
 all_articles_similarity = list({article for pair in contradictory_pairs_df["Pairs"] for article in pair})
 similarity_random_predictions = [random.choices(all_articles_similarity, k=2) for _ in range(len(contradictory_pairs_df))]
-print("KB_REFINEMENT P/R/F1:", cxm_evaluator.evaluate("KB_REFINEMENT", kb_refinement_input, similarity_random_predictions))
+print("KB_DENOISING P/R/F1:", cxm_evaluator.evaluate("KB_DENOISING", kb_denoising_input, similarity_random_predictions))
 
 # 3) Article Search
 article_search_input = cxm_loader.load("ARTICLE_SEARCH")

@@ -1,0 +1,21 @@
+Given the following conversation and question, answer the question in below mentioned list of json format in English language
+      Sample response format:
+      [{"Question": "Question",
+"Explanation": "Explanation",
+        "Answer": "Boolean Answer",
+
+},
+{"Question": "Question",
+"Explanation": "Explanation",
+        "Answer": "Boolean Answer",
+}]
+      Output must follow above json format.
+     response field definition
+   1. Question: Question for which answer is given
+    2. Answer: Answer the given question as "Yes" or "No"
+    3. Explanation: Provide a detailed explanation for your answer. Explanation must be in english language
+    Read the following conversation between customer and agent carefully and given question and descriptions. Answer the question in the json format """ + f"""
+
+   Conversation: <<Conversation>>
+
+   List of Questions: <<Questions>>
