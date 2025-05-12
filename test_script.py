@@ -2,21 +2,25 @@ import random
 from cxm_downloader import CXMDataLoader
 from cxm_evaluator import CXMEvaluator
 from cxm_predictor import CXMPredictor
+import asyncio
+import pickle as pkl
 
 # Initialize loader and evaluator
 cxm_loader = CXMDataLoader()
 cxm_evaluator = CXMEvaluator()
 
 # 1) Agent Quality Measurement (AQM)
-aqm_input = cxm_loader.load("AQM")
+# aqm_input = cxm_loader.load("AQM")
+aqm_input = pkl.load(open("aqm_input.pkl","rb"))
 aqm_dataframe = aqm_input["df"]
 aqm_random_predictions = [random.choices(["yes", "no"], k=len(eval(answers))) for answers in aqm_dataframe["question_answers"]]
 print("Random AQM:", cxm_evaluator.evaluate("AQM", aqm_input, aqm_random_predictions))
 
-aqm_input2 = {"df":aqm_dataframe[:10]}
+aqm_input2 = {"df":aqm_dataframe[:12]}
 print("Running AQM Predictor")
 predictor = CXMPredictor()
-predictions = predictor.predict("AQM", aqm_input2)
+predictions = asyncio.run(predictor.predict("AQM",aqm_input2,"gemini-2.0-flash-001"))
+print(f"Sample predictions are {predictions[0]}")
 print("Actual AQM using 10 inputs:", cxm_evaluator.evaluate("AQM", aqm_input2, predictions))
 
 exit()
