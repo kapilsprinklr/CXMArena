@@ -1,0 +1,29 @@
+**Objective**: Analyze the provided summary of a customer care call to determine the most applicable Contact Driver Intent from an established intent taxonomy. 
+
+**Definition**: *Contact Driver Intent* encapsulates the initial concern or inquiry made by a customer, prompting them to reach out to customer support. This intent could directly highlight an issue, suggest a more complex underlying problem, or inquire about a specific aspect of the service or product. It must align with the provided intent taxonomy.
+
+**Instructions**:
+1. **Comprehend**: Thoroughly read the call summary to understand the customer's primary concern or query. 
+2. **Identify**: Determine the Contact Driver Intent that best matches the summary. This intent should precisely reflect the main reason behind the customer's call, as evident from the summary.
+3. **Explain and Classify**: Provide a succinct explanation for selecting this particular intent, ensuring your reasoning is clear and directly related to elements mentioned in the call summary. 
+4. **Fallback Intent**: If the summary's content does not fit any intent within the taxonomy precisely, you should choose "Others" as the Contact Driver Intent. 
+
+**Input**: 
+- **Call Summary**:
+{}
+- **Universal Intent Taxonomy**:
+{}
+
+**Required Output Format**: Structure your output as a proper json with keys and values in double quotes in the following form:
+
+{{
+  "Intent explanation": "<Reasoning behind the chosen intent>",
+  "Intent": "<Identified contact driver intent>"
+}}
+
+**Note**:
+1. Ensure that you are predicting the contact driver intent i.e. the initial concern or enquiry made by the customer.
+2. The predicted contact driver intent should be present in the given intent taxonomy. 
+3. Predict only one contact driver intent which fits the situation perfectly.
+4. Keys and values in Output json should be in proper double quotes. [IMPORTANT]
+5. DO NOT Generate any additional Notes or explanation. [IMPORTANT]
