@@ -6,6 +6,12 @@ import asyncio
 from tqdm.auto import tqdm
 from utils.vertex_ai_helper import VertexAIHelper
 from thefuzz import process
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from sentence_transformers import SentenceTransformer
+import faiss
+from collections import OrderedDict
+import numpy as np
+
  
 PROMPT_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
@@ -141,6 +147,61 @@ class CXMPredictor:
         remain = len(inp_df)%rps
         if remain: await asyncio.gather(*tasks[-remain:])
         return preds
+
+    
+    def predict_article_search(
+        self, inp: dict, top_k=10, chunk_size=1000, chunk_overlap=100,model_name = "intfloat/multilingual-e5-large-instruct"
+    ) -> list:
+        """
+        For each query, return the top_k document_ids (str) from articles_df.
+        """
+        questions_df = inp["questions_df"]
+        articles_df = inp["articles_df"]
+
+        queries = questions_df["query"].tolist()
+        article_ids = articles_df["document_id"].astype(str).tolist()
+        articles = articles_df["document_content"].tolist()
+
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap, length_function=len,
+        )
+
+        chunks = []
+        chunk_metadata = []
+        for article_id, article in zip(article_ids, articles):
+            article_chunks = text_splitter.split_text(article)
+            chunks.extend(article_chunks)
+            chunk_metadata.extend([article_id] * len(article_chunks))
+
+        # Load embedding model (cached for this instance)
+        embedding_model = SentenceTransformer(model_name)
+
+        chunk_embeddings = embedding_model.encode(
+            chunks, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
+        ).cpu().numpy()
+
+        query_embeddings = embedding_model.encode(
+            queries, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
+        ).cpu().numpy()
+
+        dimension = chunk_embeddings.shape[1]
+        print(f"Indexing Articles")
+
+        # FAISS: inner product (assumes normalized vectors = cosine similarity)
+        index = faiss.IndexFlatIP(dimension)
+        index.add(chunk_embeddings)
+        distances, indices = index.search(query_embeddings, top_k)
+
+        print(f"Fetching Articles")
+
+        # For each query, retreive unique article_ids by chunk-sim order
+        results = []
+        for chunk_idxs in indices:
+            retrieved_article_ids = [chunk_metadata[idx] for idx in chunk_idxs]
+            unique_article_ids = list(OrderedDict.fromkeys(retrieved_article_ids))[:top_k]
+            results.append(unique_article_ids)
+        return results
+
         
 
 
@@ -152,8 +213,10 @@ class CXMPredictor:
             return await self.predict_aqm(df["conversation"].tolist(), questions_list,model_name,rps=6)
         elif key == "CONTACT_DRIVER":
             predictions = {}
-            for i in range(1,4):
+            for i in range(2,3):
                 predictions[f"Taxonomy_{i}"]=await self.predict_intent_fuzzy(inp,taxonomy_level=f"Taxonomy_{i}",rps=20)            
             return predictions
+        elif key == "ARTICLE_SEARCH":
+            return self.predict_article_search(inp, top_k=10,model_name="intfloat/multilingual-e5-large-instruct")
         
         raise NotImplementedError(f"Task {task_key} not implemented in CXMPredictor.")

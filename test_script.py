@@ -37,25 +37,32 @@ for i in range(1,4):
       "INTENT_PREDICTION", intent_prediction_input, predictions[f"Taxonomy_{i}"], taxonomy_level=f"Taxonomy_{i}"
   ))
 
-
-# 3) Knowledge Base Denoising (KB_DENOISING)
-kb_denoising_input = cxm_loader.load("KB_DENOISING")
-contradictory_pairs_df = kb_denoising_input["contradictory_df"]
-all_articles = list({article for pair in contradictory_pairs_df["Pairs"] for article in pair})
-kb_denoising_random_predictions = [random.choices(all_articles, k=2) for _ in range(len(contradictory_pairs_df))]
-print("KB_DENOISING P/R/F1:", cxm_evaluator.evaluate("KB_DENOISING", kb_denoising_input, kb_denoising_random_predictions))
-
-similarity_pairs_df = kb_denoising_input["similarity_df"]
-all_articles_similarity = list({article for pair in contradictory_pairs_df["Pairs"] for article in pair})
-similarity_random_predictions = [random.choices(all_articles_similarity, k=2) for _ in range(len(contradictory_pairs_df))]
-print("KB_DENOISING P/R/F1:", cxm_evaluator.evaluate("KB_DENOISING", kb_denoising_input, similarity_random_predictions))
-
-# 4) Article Search
+# 3) Article Search
 article_search_input = cxm_loader.load("ARTICLE_SEARCH")
 questions_df = article_search_input["questions_df"]
 article_search_predictions = list(questions_df["True KB ID"])
 random.shuffle(article_search_predictions)
 print("ARTICLE_SEARCH P@1:", cxm_evaluator.evaluate("ARTICLE_SEARCH", article_search_input, article_search_predictions))
+article_search_input['questions_df'] = article_search_input['questions_df']
+article_search_input['articles_df'] = article_search_input['articles_df']
+res=asyncio.run(predictor.predict("ARTICLE_SEARCH",article_search_input,model_name="intfloat/multilingual-e5-large-instruct"))
+
+print("ARTICLE_SEARCH P@1:", cxm_evaluator.evaluate("ARTICLE_SEARCH", article_search_input, res))
+
+
+
+# 4) Knowledge Base Denoising (KB_DENOISING)
+kb_denoising_input = cxm_loader.load("KB_REFINEMENT")
+contradictory_pairs_df = kb_denoising_input["contradictory_df"]
+all_articles = list({article for pair in contradictory_pairs_df["Pairs"] for article in pair})
+kb_denoising_random_predictions = [random.choices(all_articles, k=2) for _ in range(len(contradictory_pairs_df))]
+print("KB_DENOISING P/R/F1:", cxm_evaluator.evaluate("KB_REFINEMENT", kb_denoising_input, kb_denoising_random_predictions))
+
+similarity_pairs_df = kb_denoising_input["similarity_df"]
+all_articles_similarity = list({article for pair in contradictory_pairs_df["Pairs"] for article in pair})
+similarity_random_predictions = [random.choices(all_articles_similarity, k=2) for _ in range(len(contradictory_pairs_df))]
+print("KB_DENOISING P/R/F1:", cxm_evaluator.evaluate("KB_REFINEMENT", kb_denoising_input, similarity_random_predictions))
+
 
 
 # 5) Multi-Turn RAG

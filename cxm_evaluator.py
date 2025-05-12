@@ -155,8 +155,10 @@ class CXMEvaluator:
         for t, p in zip(df[truth_col], results):
             tv = self._safe_eval(t)
             pv = self._safe_eval(p)
-            if isinstance(tv, list):
+            if isinstance(tv, list) and isinstance(pv, list):
                 matches += sorted(tv) == sorted(pv)
+            elif isinstance(pv,list):
+                matches+= (tv in pv)
             else:
                 matches += tv == pv
         return matches / len(df) if len(df) else 0.0
