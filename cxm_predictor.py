@@ -348,7 +348,7 @@ class CXMPredictor:
             return await self.predict_aqm(df["conversation"].tolist(), questions_list,model_name,rps=6)
         elif key == "CONTACT_DRIVER":
             predictions = {}
-            for i in range(2,3):
+            for i in range(1,4):
                 predictions[f"Taxonomy_{i}"]=await self.predict_intent_fuzzy(inp,taxonomy_level=f"Taxonomy_{i}",rps=20)
             return predictions
         elif key == "ARTICLE_SEARCH":
