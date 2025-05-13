@@ -59,50 +59,46 @@ class VertexAIHelper:
         )
         return result
 
+    #TODO: Put a cap on the maximum number of concurrent requests too like in aqm predict
     async def chat_batch(
-        self,
-        all_messages: List[List[Tuple[str, str]]],
-        model_name: str = "gemini-2.0-flash",
-        tools: Optional[
-            Union[
-                List[Dict[str, Any]],        # one global list
-                List[List[Dict[str, Any]]],  # per-conversation lists
-            ]
-        ] = None,
-        system_message: Optional[
-            Union[
-                str,       # one global
-                List[str], # one per-conversation
-            ]
-        ] = None,
-        generation_overrides: Optional[Dict[str, Any]] = None,
-        batch_size: int = 8,
-        **extra_generation_kwargs,
+            self,
+            all_messages: List[List[Tuple[str, str]]],
+            model_name: str = "gemini-2.0-flash",
+            tools: Optional[
+                Union[
+                    List[Dict[str, Any]],  # one global list
+                    List[List[Dict[str, Any]]],  # per-conversation lists
+                ]
+            ] = None,
+            system_message: Optional[
+                Union[
+                    str,  # one global
+                    List[str],  # one per-conversation
+                ]
+            ] = None,
+            generation_overrides: Optional[Dict[str, Any]] = None,
+            rps: float = 1.0,
+            **extra_generation_kwargs,
     ) -> List[List[str]]:
-        if batch_size <= 0:
-            raise ValueError("`batch_size` must be a positive integer.")
+        if rps <= 0:
+            raise ValueError("`rps` must be a positive number.")
+        interval = 1.0 / rps
 
-        sem = asyncio.Semaphore(batch_size)
         tasks = []
 
         async def worker(
-            msgs: List[Tuple[str, str]],
-            sys_msg: Optional[str],
-            tools_list: Optional[List[Dict[str, Any]]],
+                msgs: List[Tuple[str, str]],
+                sys_msg: Optional[str],
+                tools_list: Optional[List[Dict[str, Any]]],
         ) -> List[str]:
-            # semaphore ensures no more than batch_size concurrent calls
-            await sem.acquire()
-            try:
-                return await self._chat_single_async(
-                    model_name=model_name,
-                    messages=msgs,
-                    system_message=sys_msg,
-                    tools=tools_list,
-                    generation_overrides=generation_overrides,
-                    **extra_generation_kwargs,
-                )
-            finally:
-                sem.release()
+            return await self._chat_single_async(
+                model_name=model_name,
+                messages=msgs,
+                system_message=sys_msg,
+                tools=tools_list,
+                generation_overrides=generation_overrides,
+                **extra_generation_kwargs,
+            )
 
         for i, msgs in enumerate(all_messages):
             # per-conversation system message
@@ -119,7 +115,10 @@ class VertexAIHelper:
             else:
                 tools_i = tools[i]
 
+            # schedule the call
             tasks.append(asyncio.create_task(worker(msgs, sys_i, tools_i)))
+            # throttle by RPS
+            await asyncio.sleep(interval)
 
         return await asyncio.gather(*tasks)
 
@@ -200,7 +199,9 @@ class VertexAIHelper:
             processed_parts = [p.get("text", p.get("function_call")) for p in parts]
             if len(processed_parts) == 1 and isinstance(processed_parts[0], str):
                 return processed_parts[0]
-            return processed_parts
+            #In case the model returns a mix of both text and function calls, return only the function calls
+            #ignoring the text
+            return [p for p in processed_parts if not isinstance(p, str)]
         except Exception:
             # fallback: return finish_reason
             cand = resp.to_dict()["candidates"][0]

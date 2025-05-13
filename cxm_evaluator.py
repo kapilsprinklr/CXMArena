@@ -1,16 +1,35 @@
 import ast
 import json
+import os
 from typing import Any, Iterable, List, Sequence, Tuple, Union
 from collections import defaultdict
+from utils.vertex_ai_helper import VertexAIHelper
 
 import numpy as np
 import pandas as pd
+
+PROMPT_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+
+def load_prompt(prompt_name):
+    prompt_path = os.path.join(PROMPT_DIR, prompt_name)
+    with open(prompt_path, "r") as f:
+        return f.read()
+
 
 class CXMEvaluator:
     """
     All metrics as methods.  Call evaluate(task_key, inp, results, **kwargs)
     with the same keys as DataLoader.load.
     """
+
+    def __init__(self):
+        self.task_prompt_files = {
+            "ARTICLE_SEARCH": "article_search_evaluation.txt",
+            "MULTI_TURN_RAG": "multi_turn_rag_evaluation.txt",
+            # Add more as needed
+        }
+        self.prompts = {k: load_prompt(v) for k, v in self.task_prompt_files.items()}
+        self.llm = VertexAIHelper("./access_forrestor_nlp.json")
 
     @staticmethod
     def _safe_eval(obj: Any) -> Any:
@@ -43,24 +62,6 @@ class CXMEvaluator:
             return 0.0
         matches = sum(1 for t, p in zip(y_true, y_pred) if t == p)
         return matches / len(y_true)
-
-    def aqm_accuracy(self, inp: dict, results: Sequence) -> float:
-        df = inp["df"]
-        self._assert_length_match(len(df), len(results), "aqm results")
-
-        def extract(block):
-            b = self._safe_eval(block)
-            if isinstance(b, list) and b and isinstance(b[0], dict):
-                return [d["Answer"].lower() for d in b]
-            if isinstance(b, list) and b and isinstance(b[0], str):
-                return [s.lower() for s in b]
-            raise TypeError("aqm_accuracy: expected list of dicts or strings")
-
-        y_t, y_p = [], []
-        for t_blk, p_blk in zip(df["question_answers"], results):
-            y_t.extend(extract(t_blk))
-            y_p.extend(extract(p_blk))
-        return self._exact_match_precision(y_t, y_p)
 
     def aqm_conversation_level_accuracy(self, inp: dict, results: list):
         """
@@ -181,50 +182,29 @@ class CXMEvaluator:
         rows = articles_df.loc[articles_df.document_id == kb_id]
         return rows.document_content.tolist()[0]
 
-    async def evaluate_article_search_results(self, article_search_input, vertex_ai_helper, result_kbs_ids, result_answers, model_name='gemini-1.5-pro'):
-        questions_df = article_search_input["questions_df"]
-        articles_df = article_search_input["articles_df"]
-        all_faqbot_classification_prompts = []
+    def get_kbs_content_string(self, articles_df, kb_ids):
+        if not kb_ids:
+            return "NONE"
 
-        i = 0
-        faqbot_classification_template = open('./prompts/article_search_evaluation.txt').read()
+        all_kbs = [f"KB {i+1} ID: {kb_id}\n KB {i+1} Content: {self.get_kb_content(articles_df, kb_id)}" for i, kb_id in enumerate(kb_ids)]
+        line_br = '-'*50
+        return f"\n{line_br}\n".join(all_kbs)
 
-        for _, row in questions_df.iterrows():
-            kb_id_true = row['True KB Id']
-            kb_id_pred = result_kbs_ids[i]
-
-            curr_prompt = faqbot_classification_template.format(
-                row.query,
-                row.answer,
-                self.get_kb_content(articles_df, kb_id_true),
-                'NONE\n' if kb_id_pred == kb_id_true else self.get_kb_content(articles_df, kb_id_pred),
-                result_answers[i]
-            )
-            i += 1
-            all_faqbot_classification_prompts.append(curr_prompt)
-
-        classification_results = await vertex_ai_helper.chat_batch(all_faqbot_classification_prompts, model_name=model_name)
-        classification_results_parsed = [x.split(':', 1)[0].lower() for x in classification_results]
-
-        valid_classes = ['correct', 'hallucinated', 'incomplete', 'refusal']
-        return [x if x in valid_classes else 'parsing_error' for x in classification_results_parsed]
-
-    async def evaluate_multi_turn_rag_results(self, multi_turn_rag_input, vertex_ai_helper, result_kbs_ids, result_answers, model_name='gemini-1.5-pro'):
+    async def evaluate_multi_turn_rag_results(self, multi_turn_rag_input, result_kbs_ids, result_answers, model_name='gemini-1.5-pro'):
         conversation_df = multi_turn_rag_input["conversation_df"]
         articles_df = multi_turn_rag_input["articles_df"]
         all_rag_classification_prompts = []
 
         i = 0
-        multi_turn_rag_evaluation_template = open('./prompts/multi_turn_rag_evaluation.txt').read()
+        multi_turn_rag_evaluation_template = self.prompts['MULTI_TURN_RAG']
 
         for _, row in conversation_df.iterrows():
             kb_id_true = self._safe_eval(row['kb_ids'])
             kb_id_pred = result_kbs_ids[i]
             kb_id_relevant = list(set(kb_id_pred) - set(kb_id_true))
 
-            line_br = '-'*50
-            all_kbs_true = f"\n{line_br}\n".join([self.get_kb_content(articles_df, x) for x in kb_id_true])
-            all_kbs_relevant = f"\n{line_br}\n".join([self.get_kb_content(articles_df, x) for x in kb_id_relevant])
+            all_kbs_true = self.get_kbs_content_string(articles_df, kb_id_true)
+            all_kbs_relevant = self.get_kbs_content_string(articles_df, kb_id_relevant)
 
             curr_prompt = multi_turn_rag_evaluation_template.format(
                 conversation_context = row.conversation_context,
@@ -235,23 +215,24 @@ class CXMEvaluator:
             i += 1
             all_rag_classification_prompts.append(curr_prompt)
 
-        classification_results = await vertex_ai_helper.chat_batch(all_rag_classification_prompts, model_name=model_name)
+        classification_results = await self.llm.chat_batch(all_rag_classification_prompts, model_name=model_name)
         classification_results_parsed = [self._parse_json(x, default_json={'Category': 'parsing_error'})['Category'].lower() for x in classification_results]
         return classification_results_parsed
 
-    def evaluate(self, task_key: str, inp: dict, results: Sequence, **kwargs):
+    def evaluate(self, task_key: str, inp: dict, results, **kwargs):
         key = task_key.upper()
         if key == "AQM":
             return self.aqm_conversation_level_accuracy(inp, results)
-            # return self.aqm_accuracy(inp, results)
         if key == "KB_REFINEMENT":
+            assert 'pair_key' in kwargs and kwargs.get('pair_key') in ['contradictory_df', 'similarity_df']
             return self.article_refinement_metrics(inp, results, **kwargs)
         if key == "ARTICLE_SEARCH":
             return self.article_search_precision(inp, results)
         if key == "INTENT_PREDICTION":
             return self.intent_exact_match_precision(inp, results, **kwargs)
-        if key == "MULTI_TURN":
-            return self.rag_recall(inp, results)
+        if key == "MULTI_TURN_RAG":
+            assert 'kb_ids' in results and 'answers' in results
+            return self.evaluate_multi_turn_rag_results(inp, results['kb_ids'], results['answers'] **kwargs)
         if key == "TOOL_CALLING":
             return self.tool_call_precision(inp, results)
         raise KeyError(f"Unknown task_key {task_key!r} in Evaluator.evaluate()")

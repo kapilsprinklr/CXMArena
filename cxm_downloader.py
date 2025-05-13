@@ -81,7 +81,7 @@ class CXMDataLoader:
             return cls.load_article_search()
         if key == "INTENT_PREDICTION":
             return cls.load_intent_prediction()
-        if key == "MULTI_TURN":
+        if key == "MULTI_TURN_RAG":
             return cls.load_multi_turn_rag()
         if key == "TOOL_CALLING":
             return cls.load_tool_calling()
