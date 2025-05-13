@@ -1,7 +1,7 @@
 import os
 import time
 import json
-from typing import List, Any
+from typing import List, Any, Dict, Union
 import ast
 import re
 import asyncio
@@ -32,13 +32,69 @@ class CXMPredictor:
             "CONTACT_DRIVER": "contact_driver.txt",
             "QUERY_FORMATION": "query_formation.txt",
             "TOOL_CALLING": "tool_calling.txt",
+            "MULTI_TURN_RAG_RESPONSE": "multi_turn_agent_response.txt",
             # Add more as needed
         }
         self.prompts = {k: load_prompt(v) for k,v in self.task_prompt_files.items()}
         self.llm = VertexAIHelper("./access_forrestor_nlp.json")
 
+    def _parse_conversation(self, conversation_text: str) -> List[tuple]:
+        """
+        Parse a conversation string like "Customer: ... Agent: ..." into a list of
+        (role, text) tuples where role is 'user' for Customer and 'model' for Agent.
+        """
+        pattern = r"(Customer|Agent): ([\s\S]*?)(?=(?:Customer|Agent): |$)"
+        return [
+            ('user' if m.group(1) == 'Customer' else 'model', m.group(2).strip())
+            for m in re.finditer(pattern, conversation_text)
+        ]
 
+    def _retrieve_top_k(
+        self,
+        documents: List[str],
+        document_ids: List[str],
+        queries: List[str],
+        top_k: int,
+        chunk_size: int,
+        chunk_overlap: int,
+        embed_model_name: str
+    ) -> List[List[str]]:
+        """
+        Split documents into chunks, embed with SentenceTransformer, index with FAISS,
+        and for each query retrieve the top_k unique document_ids by cosine similarity.
+        """
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            length_function=len,
+        )
+        chunks = []
+        chunk_metadata = []
+        for doc_id, doc in zip(document_ids, documents):
+            doc_chunks = text_splitter.split_text(doc)
+            chunks.extend(doc_chunks)
+            chunk_metadata.extend([doc_id] * len(doc_chunks))
 
+        embedding_model = SentenceTransformer(embed_model_name)
+        # Encode and normalize
+        chunk_embeddings = embedding_model.encode(
+            chunks, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=False
+        ).cpu().numpy()
+        query_embeddings = embedding_model.encode(
+            queries, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=False
+        ).cpu().numpy()
+
+        dim = chunk_embeddings.shape[1]
+        index = faiss.IndexFlatIP(dim)
+        index.add(chunk_embeddings)
+        distances, indices = index.search(query_embeddings, top_k)
+
+        results = []
+        for idx_list in indices:
+            retrieved_ids = [chunk_metadata[i] for i in idx_list]
+            unique_ids = list(OrderedDict.fromkeys(retrieved_ids))[:top_k]
+            results.append(unique_ids)
+        return results
 
     async def predict_aqm(
         self,
@@ -166,49 +222,43 @@ class CXMPredictor:
         article_ids = articles_df["document_id"].astype(str).tolist()
         articles = articles_df["document_content"].tolist()
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap, length_function=len,
+        return self._retrieve_top_k(
+            documents=articles,
+            document_ids=article_ids,
+            queries=queries,
+            top_k=top_k,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            embed_model_name=model_name,
         )
 
-        chunks = []
-        chunk_metadata = []
-        for article_id, article in zip(article_ids, articles):
-            article_chunks = text_splitter.split_text(article)
-            chunks.extend(article_chunks)
-            chunk_metadata.extend([article_id] * len(article_chunks))
+    async def _generate_messages(self, conversations, list_of_kb_ids, articles_df, rps):
+        list_of_messages = []
+        list_of_system_prompts = []
+        system_prompt_template = self.prompts['MULTI_TURN_RAG_RESPONSE']
 
-        # Load embedding model (cached for this instance)
-        embedding_model = SentenceTransformer(model_name)
+        for conv_text, kb_ids in zip(conversations, list_of_kb_ids):
+            curr_messages = self._parse_conversation(conv_text)
+            curr_system_prompt = system_prompt_template.format(
+                kb_content=self.get_kbs_content_string(articles_df, kb_ids)
+            )
 
-        chunk_embeddings = embedding_model.encode(
-            chunks, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
-        ).cpu().numpy()
+            list_of_messages.append(curr_messages)
+            list_of_system_prompts.append(curr_system_prompt)
 
-        query_embeddings = embedding_model.encode(
-            queries, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
-        ).cpu().numpy()
+        results = await self.llm.chat_batch(
+            all_messages=list_of_messages,
+            system_message=list_of_system_prompts,
+            model_name='gemini-2.0-flash',
+            rps=rps
+        )
 
-        dimension = chunk_embeddings.shape[1]
-        print(f"Indexing Articles")
-
-        # FAISS: inner product (assumes normalized vectors = cosine similarity)
-        index = faiss.IndexFlatIP(dimension)
-        index.add(chunk_embeddings)
-        distances, indices = index.search(query_embeddings, top_k)
-
-        print(f"Fetching Articles")
-
-        # For each query, retreive unique article_ids by chunk-sim order
-        results = []
-        for chunk_idxs in indices:
-            retrieved_article_ids = [chunk_metadata[idx] for idx in chunk_idxs]
-            unique_article_ids = list(OrderedDict.fromkeys(retrieved_article_ids))[:top_k]
-            results.append(unique_article_ids)
         return results
 
-    async def predict_multi_turn_article_search(
+
+    async def predict_multi_turn_rag(
             self, inp: dict, top_k=10, chunk_size=1000, chunk_overlap=100,
-            model_name="intfloat/multilingual-e5-large-instruct"
+            model_name="intfloat/multilingual-e5-large-instruct", rps = 1.0
     ) -> list:
         """
         For each query, return the top_k document_ids (str) from articles_df.
@@ -224,51 +274,26 @@ class CXMPredictor:
         article_ids = articles_df["document_id"].astype(str).tolist()
         articles = articles_df["document_content"].tolist()
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap, length_function=len,
+        results_kb_ids = self._retrieve_top_k(
+            documents=articles,
+            document_ids=article_ids,
+            queries=queries,
+            top_k=top_k,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            embed_model_name=model_name,
         )
 
-        chunks = []
-        chunk_metadata = []
-        for article_id, article in zip(article_ids, articles):
-            article_chunks = text_splitter.split_text(article)
-            chunks.extend(article_chunks)
-            chunk_metadata.extend([article_id] * len(article_chunks))
-
-        # Load embedding model (cached for this instance)
-        embedding_model = SentenceTransformer(model_name)
-
-        chunk_embeddings = embedding_model.encode(
-            chunks, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
-        ).cpu().numpy()
-
-        query_embeddings = embedding_model.encode(
-            queries, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
-        ).cpu().numpy()
-
-        dimension = chunk_embeddings.shape[1]
-        print(f"Indexing Articles")
-
-        # FAISS: inner product (assumes normalized vectors = cosine similarity)
-        index = faiss.IndexFlatIP(dimension)
-        index.add(chunk_embeddings)
-        distances, indices = index.search(query_embeddings, top_k)
-
-        print(f"Fetching Articles")
-
-        # For each query, retreive unique article_ids by chunk-sim order
-        results = []
-        for chunk_idxs in indices:
-            retrieved_article_ids = [chunk_metadata[idx] for idx in chunk_idxs]
-            unique_article_ids = list(OrderedDict.fromkeys(retrieved_article_ids))[:top_k]
-            results.append(unique_article_ids)
-        return results
+        agent_responses = await self._generate_messages(conversations, results_kb_ids, articles_df, rps)
+        return results_kb_ids, agent_responses
 
     def get_kb_content(self, articles_df, kb_id):
         rows = articles_df.loc[articles_df.document_id == kb_id]
         return rows.document_content.tolist()[0]
 
     def get_kbs_content_string(self, articles_df, kb_ids):
+        if not kb_ids:
+            return "NONE"
         all_kbs = [f"KB {i+1} ID: {kb_id}\n KB {i+1} Content: {self.get_kb_content(articles_df, kb_id)}" for i, kb_id in enumerate(kb_ids)]
         line_br = '-'*50
         return f"\n{line_br}\n".join(all_kbs)
@@ -278,7 +303,7 @@ class CXMPredictor:
         inp: dict,
         n_tools: int = 16,
         model_name: str = "gemini-2.0-flash-001",
-        rps: int = 6,
+        rps: float = 1.0,
         # prompt_file: str = "tool_calling.txt",
     ) -> list:
 
@@ -292,12 +317,7 @@ class CXMPredictor:
         list_of_tools = []
 
         for _, row in conv_df.iterrows():
-            conversation_text = row.conversation_context
-            pattern = r"(Customer|Agent): ([\s\S]*?)(?=(?:Customer|Agent): |$)"
-            curr_messages = [
-                ('user' if match.group(1) == 'Customer' else 'model', match.group(2).strip())
-                for match in re.finditer(pattern, conversation_text)
-            ]
+            curr_messages = self._parse_conversation(row.conversation_context)
             curr_tools = row[f"tool_candidates{n_tools}"]
             curr_tools_openai_format = [tools_dict[x] for x in curr_tools]
             curr_system_prompt = system_prompt_template.format(
@@ -312,9 +332,11 @@ class CXMPredictor:
             all_messages=list_of_messages,
             system_message=list_of_system_prompts,
             tools=list_of_tools,
-            model_name=model_name
+            model_name=model_name,
+            rps=rps
         )
 
+        results = [None if isinstance(x, str) else list(set([y['name'] for y in x])) for x in results]
         return results
 
     def predict_kb_refinement(self, inp: dict, similarity_threshold: float = 0.9, k = 5, model_name: str = "intfloat/multilingual-e5-large-instruct") -> list[list[str]]:
@@ -359,7 +381,7 @@ class CXMPredictor:
         return similar_pairs
 
 
-    async def predict(self, task_key: str, inp: dict , model_name = "gemini-2.0-flash-001") -> List[Any]:
+    async def predict(self, task_key: str, inp: dict , model_name = "gemini-2.0-flash-001") -> Union[List[Any], Dict]:
         key = task_key.upper()
         if key == "AQM":
             df = inp["df"]
@@ -367,11 +389,17 @@ class CXMPredictor:
             return await self.predict_aqm(df["conversation"].tolist(), questions_list,model_name,rps=6)
         elif key == "CONTACT_DRIVER":
             predictions = {}
-            for i in range(2,3):
+            for i in range(1,4):
                 predictions[f"Taxonomy_{i}"]=await self.predict_intent_fuzzy(inp,taxonomy_level=f"Taxonomy_{i}",rps=20)
             return predictions
         elif key == "ARTICLE_SEARCH":
             return self.predict_article_search(inp, top_k=10,model_name="intfloat/multilingual-e5-large-instruct")
+        elif key == "MULTI_TURN_RAG":
+            return await self.predict_multi_turn_rag(
+                inp, top_k = 10, chunk_size = 1000, chunk_overlap = 100, model_name = "intfloat/multilingual-e5-large-instruct", rps = 1.0
+            )
+        elif key == "TOOL_CALLING":
+            return await self.predict_tool_calling(inp, n_tools = 16, model_name = "gemini-2.0-flash-001", rps = 1.0)
         elif key == "KB_REFINEMENT":
             return self.predict_kb_refinement(inp, similarity_threshold=0.9, k = 5, model_name="intfloat/multilingual-e5-large-instruct")
 
