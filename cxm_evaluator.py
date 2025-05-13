@@ -125,11 +125,20 @@ class CXMEvaluator:
         return conversation_level_accuracy, question_level_accuracy
 
     def article_refinement_metrics(
-        self, inp: dict, results: Sequence, pair_key: str = "contradictory_df"
+        self, inp: dict, results: Sequence, pair_key: str = "similarity_df"
     ) -> Tuple[float, float, float]:
         df = inp[pair_key]
-        true_pairs = {tuple(self._safe_eval(x)) for x in df["Pairs"]}
-        pred_pairs = {tuple(self._safe_eval(x)) for x in results}
+        
+        true_pairs = set()
+        for x in df["Pairs"]:
+            pair = self._safe_eval(x)
+            true_pairs.add(tuple(sorted(pair)))
+        
+        pred_pairs = set()
+        for x in results:
+            pair = self._safe_eval(x)
+            pred_pairs.add(tuple(sorted(pair)))
+
         if not pred_pairs:
             raise ValueError("No predictions provided for refinement metrics.")
         tp = len(true_pairs & pred_pairs)
