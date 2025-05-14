@@ -58,8 +58,7 @@ class VertexAIHelper:
             **extra_generation_kwargs,
         )
         return result
-
-    #TODO: Put a cap on the maximum number of concurrent requests too like in aqm predict
+    
     async def chat_batch(
             self,
             all_messages: List[List[Tuple[str, str]]],
@@ -78,11 +77,16 @@ class VertexAIHelper:
             ] = None,
             generation_overrides: Optional[Dict[str, Any]] = None,
             rps: float = 1.0,
+            max_concurrent: Optional[int] = None,
             **extra_generation_kwargs,
     ) -> List[List[str]]:
         if rps <= 0:
             raise ValueError("`rps` must be a positive number.")
         interval = 1.0 / rps
+        
+        # Set max_concurrent to 2*rps if not provided
+        max_concurrent = max_concurrent or int(rps * 2)
+        semaphore = asyncio.Semaphore(max_concurrent)
 
         tasks = []
 
@@ -91,14 +95,15 @@ class VertexAIHelper:
                 sys_msg: Optional[str],
                 tools_list: Optional[List[Dict[str, Any]]],
         ) -> List[str]:
-            return await self._chat_single_async(
-                model_name=model_name,
-                messages=msgs,
-                system_message=sys_msg,
-                tools=tools_list,
-                generation_overrides=generation_overrides,
-                **extra_generation_kwargs,
-            )
+            async with semaphore:
+                return await self._chat_single_async(
+                    model_name=model_name,
+                    messages=msgs,
+                    system_message=sys_msg,
+                    tools=tools_list,
+                    generation_overrides=generation_overrides,
+                    **extra_generation_kwargs,
+                )
 
         for i, msgs in enumerate(all_messages):
             # per-conversation system message

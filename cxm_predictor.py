@@ -7,6 +7,7 @@ import re
 import asyncio
 from tqdm.auto import tqdm
 from utils.vertex_ai_helper import VertexAIHelper
+from utils.misc import get_kbs_content_string
 from thefuzz import process
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
@@ -78,10 +79,10 @@ class CXMPredictor:
         embedding_model = SentenceTransformer(embed_model_name)
         # Encode and normalize
         chunk_embeddings = embedding_model.encode(
-            chunks, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=False
+            chunks, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
         ).cpu().numpy()
         query_embeddings = embedding_model.encode(
-            queries, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=False
+            queries, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True
         ).cpu().numpy()
 
         dim = chunk_embeddings.shape[1]
@@ -114,37 +115,29 @@ class CXMPredictor:
             return []
 
         prompt_template = self.prompts["AQM"]
-        n = len(conversations)
-        preds = [None] * n
+        prompts = []
 
-        # RPS throttle and concurrency semaphore
-        max_concurrent = max_concurrent or rps * 2
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def call_one(i, conv, qs):
+        # Create all prompts
+        for conv, qs in zip(conversations, question_lists):
             prompt = (
                 prompt_template
                 .replace("<<Conversation>>", str(conv))
                 .replace("<<Questions>>", str(qs))
             )
-            async with semaphore:
-                response = await self.llm.chat(messages=[("user", prompt)], model_name=model_name)
-                preds[i] = parse_yes_no_list(response) if response else []
+            prompts.append([("user", prompt)])
 
-        # Fire tasks in waves of 'rps'
-        tasks = []
-        for idx, (conv, qs) in enumerate(zip(conversations, question_lists)):
-            tasks.append(call_one(idx, conv, qs))
-            if (idx + 1) % rps == 0:
-                await asyncio.gather(*tasks[-rps:])  # Wait for last batch to finish
-                await asyncio.sleep(1)               # Wait 1s to enforce RPS
+        # Use the batch method which already handles RPS and concurrency
+        responses = await self.llm.chat_batch(
+            all_messages=prompts,
+            model_name=model_name,
+            rps=rps,
+            max_concurrent=max_concurrent
+        )
 
-        # Finish any remaining tasks
-        if (n % rps) != 0:
-            await asyncio.gather(*tasks[-(n % rps):])
-        # preds may fill out of order, but is guaranteed to be fully filled since each call_one writes by index
+        # Parse the responses
+        predictions = [parse_yes_no_list(resp) if resp else ['parsing_error' for _ in range(len(qs))] for resp, qs in zip(responses, question_lists)]
 
-        return preds
+        return predictions
 
     async def predict_intent_fuzzy(
         self,
@@ -240,7 +233,7 @@ class CXMPredictor:
         for conv_text, kb_ids in zip(conversations, list_of_kb_ids):
             curr_messages = self._parse_conversation(conv_text)
             curr_system_prompt = system_prompt_template.format(
-                kb_content=self.get_kbs_content_string(articles_df, kb_ids)
+                kb_content=get_kbs_content_string(articles_df, kb_ids)
             )
 
             list_of_messages.append(curr_messages)
@@ -286,17 +279,6 @@ class CXMPredictor:
 
         agent_responses = await self._generate_messages(conversations, results_kb_ids, articles_df, rps)
         return results_kb_ids, agent_responses
-
-    def get_kb_content(self, articles_df, kb_id):
-        rows = articles_df.loc[articles_df.document_id == kb_id]
-        return rows.document_content.tolist()[0]
-
-    def get_kbs_content_string(self, articles_df, kb_ids):
-        if not kb_ids:
-            return "NONE"
-        all_kbs = [f"KB {i+1} ID: {kb_id}\n KB {i+1} Content: {self.get_kb_content(articles_df, kb_id)}" for i, kb_id in enumerate(kb_ids)]
-        line_br = '-'*50
-        return f"\n{line_br}\n".join(all_kbs)
 
     async def predict_tool_calling(
         self,

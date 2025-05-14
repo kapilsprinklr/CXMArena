@@ -2,8 +2,9 @@ import ast
 import json
 import os
 from typing import Any, Iterable, List, Sequence, Tuple, Union
-from collections import defaultdict
+from collections import defaultdict, Counter
 from utils.vertex_ai_helper import VertexAIHelper
+from utils.misc import get_kbs_content_string
 
 import numpy as np
 import pandas as pd
@@ -187,18 +188,6 @@ class CXMEvaluator:
                 matches += tv == pv
         return matches / len(df) if len(df) else 0.0
 
-    def get_kb_content(self, articles_df, kb_id):
-        rows = articles_df.loc[articles_df.document_id == kb_id]
-        return rows.document_content.tolist()[0]
-
-    def get_kbs_content_string(self, articles_df, kb_ids):
-        if not kb_ids:
-            return "NONE"
-
-        all_kbs = [f"KB {i+1} ID: {kb_id}\n KB {i+1} Content: {self.get_kb_content(articles_df, kb_id)}" for i, kb_id in enumerate(kb_ids)]
-        line_br = '-'*50
-        return f"\n{line_br}\n".join(all_kbs)
-
     async def evaluate_multi_turn_rag_results(self, multi_turn_rag_input, result_kbs_ids, result_answers, model_name='gemini-1.5-pro'):
         conversation_df = multi_turn_rag_input["conversation_df"]
         articles_df = multi_turn_rag_input["articles_df"]
@@ -212,8 +201,8 @@ class CXMEvaluator:
             kb_id_pred = result_kbs_ids[i]
             kb_id_relevant = list(set(kb_id_pred) - set(kb_id_true))
 
-            all_kbs_true = self.get_kbs_content_string(articles_df, kb_id_true)
-            all_kbs_relevant = self.get_kbs_content_string(articles_df, kb_id_relevant)
+            all_kbs_true = get_kbs_content_string(articles_df, kb_id_true)
+            all_kbs_relevant = get_kbs_content_string(articles_df, kb_id_relevant)
 
             curr_prompt = multi_turn_rag_evaluation_template.format(
                 conversation_context = row.conversation_context,
@@ -226,7 +215,7 @@ class CXMEvaluator:
 
         classification_results = await self.llm.chat_batch(all_rag_classification_prompts, model_name=model_name)
         classification_results_parsed = [self._parse_json(x, default_json={'Category': 'parsing_error'})['Category'].lower() for x in classification_results]
-        return classification_results_parsed
+        return dict(Counter(classification_results_parsed))
 
     def evaluate(self, task_key: str, inp: dict, results, **kwargs):
         key = task_key.upper()
@@ -241,7 +230,7 @@ class CXMEvaluator:
             return self.intent_exact_match_precision(inp, results, **kwargs)
         if key == "MULTI_TURN_RAG":
             assert 'kb_ids' in results and 'answers' in results
-            return self.evaluate_multi_turn_rag_results(inp, results['kb_ids'], results['answers'] **kwargs)
+            return self.evaluate_multi_turn_rag_results(inp, results['kb_ids'], results['answers'], **kwargs)
         if key == "TOOL_CALLING":
             return self.tool_call_precision(inp, results)
         raise KeyError(f"Unknown task_key {task_key!r} in Evaluator.evaluate()")
