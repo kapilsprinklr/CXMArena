@@ -30,7 +30,7 @@ class CXMPredictor:
     def __init__(self):
         self.task_prompt_files = {
             "AQM": "aqm.txt",
-            "CONTACT_DRIVER": "contact_driver.txt",
+            "INTENT_PREDICTION": "intent_prediction.txt",
             "QUERY_FORMATION": "query_formation.txt",
             "TOOL_CALLING": "tool_calling.txt",
             "MULTI_TURN_RAG_RESPONSE": "multi_turn_agent_response.txt",
@@ -38,8 +38,9 @@ class CXMPredictor:
         }
         self.prompts = {k: load_prompt(v) for k,v in self.task_prompt_files.items()}
         self.llm = VertexAIHelper("./access_forrestor_nlp.json")
-
-    def _parse_conversation(self, conversation_text: str) -> List[tuple]:
+    
+    @staticmethod
+    def _parse_conversation(conversation_text: str) -> List[tuple]:
         """
         Parse a conversation string like "Customer: ... Agent: ..." into a list of
         (role, text) tuples where role is 'user' for Customer and 'model' for Agent.
@@ -49,9 +50,9 @@ class CXMPredictor:
             ('user' if m.group(1) == 'Customer' else 'model', m.group(2).strip())
             for m in re.finditer(pattern, conversation_text)
         ]
-
+    
+    @staticmethod
     def _retrieve_top_k(
-        self,
         documents: List[str],
         document_ids: List[str],
         queries: List[str],
@@ -162,10 +163,10 @@ class CXMPredictor:
         taxonomy_str = "\n".join([f"{i+1}. {k}: {v}" for i, (k, v) in enumerate(taxonomy_dict.items())])
 
         # Load prompt template (as defined in your prompt_dir)
-        prompt_template = self.prompts.get("CONTACT_DRIVER")
+        prompt_template = self.prompts.get("INTENT_PREDICTION")
         if not prompt_template:
             prompt_template = load_prompt(prompt_file)
-            self.prompts["CONTACT_DRIVER"] = prompt_template
+            self.prompts["INTENT_PREDICTION"] = prompt_template
 
         inp_df = inp["conversation_df"]
         preds = [None] * len(inp_df)
@@ -303,7 +304,7 @@ class CXMPredictor:
             curr_tools = row[f"tool_candidates{n_tools}"]
             curr_tools_openai_format = [tools_dict[x] for x in curr_tools]
             curr_system_prompt = system_prompt_template.format(
-                kb_content = self.get_kbs_content_string(articles_df, row.kb_ids)
+                kb_content = get_kbs_content_string(articles_df, row.kb_ids)
             )
 
             list_of_messages.append(curr_messages)
@@ -369,7 +370,7 @@ class CXMPredictor:
             df = inp["df"]
             questions_list=[[qa['Question'] for qa in ast.literal_eval(js)] for js in df["question_answers"].tolist()]
             return await self.predict_aqm(df["conversation"].tolist(), questions_list,model_name,rps=6)
-        elif key == "CONTACT_DRIVER":
+        elif key == "INTENT_PREDICTION":
             predictions = {}
             for i in range(1,4):
                 predictions[f"Taxonomy_{i}"]=await self.predict_intent_fuzzy(inp,taxonomy_level=f"Taxonomy_{i}",rps=20)
