@@ -219,7 +219,7 @@ class CXMEvaluator:
         result = {k: v/len(classification_results_parsed) for k, v in result.items()}
         return result
 
-    def evaluate(self, task_key: str, inp: dict, results, **kwargs):
+    async def evaluate(self, task_key: str, inp: dict, results, **kwargs):
         key = task_key.upper()
         if key == "AQM":
             return self.aqm_conversation_level_accuracy(inp, results)
@@ -232,7 +232,7 @@ class CXMEvaluator:
             return self.intent_exact_match_precision(inp, results, **kwargs)
         if key == "MULTI_TURN_RAG":
             assert 'kb_ids' in results and 'answers' in results
-            return self.evaluate_multi_turn_rag_results(inp, results['kb_ids'], results['answers'], **kwargs)
+            return await self.evaluate_multi_turn_rag_results(inp, results['kb_ids'], results['answers'], **kwargs)
         if key == "TOOL_CALLING":
             return self.tool_call_precision(inp, results)
         raise KeyError(f"Unknown task_key {task_key!r} in Evaluator.evaluate()")
