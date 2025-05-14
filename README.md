@@ -78,7 +78,6 @@ The framework implements specific evaluation metrics for each task:
 
 ### Article Search
 - **Precision**: Exact match accuracy for retrieved article IDs
-- **Response Quality**: Evaluation of answer quality (correct/hallucinated/incomplete/refusal) based on retrieved knowledge
 
 ### KB Refinement
 - **Precision**: Accuracy of identified article pairs
@@ -87,7 +86,6 @@ The framework implements specific evaluation metrics for each task:
 
 ### Contact Driver Identification
 - **Exact Match Accuracy**: Accuracy of predicted taxonomy levels
-- **Fuzzy Match Support**: Includes fuzzy matching for taxonomy classification
 
 ### Tool Calling
 - **Tool Selection Accuracy**: Exact match precision for tool selection
