@@ -68,6 +68,8 @@ metrics = evaluator.evaluate(task_key=task_key, inp=input_data, results=results)
 - `TOOL_CALLING`: Tool Calling
 - `MULTI_TURN_RAG`: Multi-turn RAG
 
+> **Note**:  For optimal performance, it is recommended to run the predictor for KB_REFINEMENT, ARTICLE_SEARCH, and MULTI_TURN_RAG on a GPU. Running on a CPU may result in slower execution.
+
 ## Evaluation Metrics
 
 The framework implements specific evaluation metrics for each task:
