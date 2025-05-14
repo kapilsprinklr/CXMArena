@@ -73,7 +73,7 @@ class CXMTestSuite:
         )
 
         # Evaluate results
-        result = self.evaluator.evaluate("AQM", inp, predictions)
+        result = await self.evaluator.evaluate("AQM", inp, predictions)
         print(f"AQM Results - Conversation Level Accuracy: {result[0]:.3f}, Question Level Accuracy: {result[1]:.3f}")
         return result
 
@@ -91,7 +91,7 @@ class CXMTestSuite:
             predictions = self.predictor.predict_kb_refinement(inp, k = self.task_configs["KB_REFINEMENT"]["k"], similarity_threshold = self.task_configs["KB_REFINEMENT"]["similarity_threshold"], model_name = self.task_configs["KB_REFINEMENT"]["model_name"])
 
             # Evaluate results
-            result = self.evaluator.evaluate("KB_REFINEMENT", inp, predictions, pair_key=pair_key)
+            result = await self.evaluator.evaluate("KB_REFINEMENT", inp, predictions, pair_key=pair_key)
             results[pair_key] = result
             print(
                 f"KB Refinement ({pair_key}) Results - Precision: {result[0]:.3f}, Recall: {result[1]:.3f}, F1: {result[2]:.3f}")
@@ -112,7 +112,7 @@ class CXMTestSuite:
         )
 
         # Evaluate results
-        result = self.evaluator.evaluate("ARTICLE_SEARCH", inp, predictions)
+        result = await self.evaluator.evaluate("ARTICLE_SEARCH", inp, predictions)
         print(f"Article Search Results - Precision: {result:.3f}")
         return result
 
@@ -133,7 +133,7 @@ class CXMTestSuite:
             )
 
             # Evaluate results
-            result = self.evaluator.evaluate("INTENT_PREDICTION", inp, predictions, taxonomy_level=taxonomy_level)
+            result = await self.evaluator.evaluate("INTENT_PREDICTION", inp, predictions, taxonomy_level=taxonomy_level)
             results[taxonomy_level] = result
             print(f"Intent Prediction ({taxonomy_level}) Results - Precision: {result:.3f}")
 
@@ -178,7 +178,7 @@ class CXMTestSuite:
         )
 
         # Evaluate results
-        result = self.evaluator.evaluate("TOOL_CALLING", inp, predictions)
+        result = await self.evaluator.evaluate("TOOL_CALLING", inp, predictions)
         print(f"Tool Calling Results - Precision: {result:.3f}")
         return result
 
