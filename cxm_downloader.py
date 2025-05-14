@@ -7,7 +7,7 @@ class CXMDataLoader:
     Download and return the inputs for each task.
     Use load(task_key) with one of:
       "AQM", "KB_REFINEMENT", "ARTICLE_SEARCH",
-      "INTENT_PREDICTION", "MULTI_TURN", "TOOL_CALLING"
+      "INTENT_PREDICTION", "MULTI_TURN_RAG", "TOOL_CALLING"
     """
 
     @staticmethod

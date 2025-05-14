@@ -215,7 +215,9 @@ class CXMEvaluator:
 
         classification_results = await self.llm.chat_batch(all_rag_classification_prompts, model_name=model_name)
         classification_results_parsed = [self._parse_json(x, default_json={'Category': 'parsing_error'})['Category'].lower() for x in classification_results]
-        return dict(Counter(classification_results_parsed))
+        result =  dict(Counter(classification_results_parsed))
+        result = {k: v/len(classification_results_parsed) for k, v in result.items()}
+        return result
 
     def evaluate(self, task_key: str, inp: dict, results, **kwargs):
         key = task_key.upper()
