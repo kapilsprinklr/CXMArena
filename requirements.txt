@@ -6,3 +6,4 @@ thefuzz
 langchain
 sentence_transformers
 tqdm
+faiss-cpu

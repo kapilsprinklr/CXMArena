@@ -31,8 +31,9 @@ class CXMTestSuite:
                 "rps": 5
             },
             "KB_REFINEMENT": {
-                "model_name": "gemini-2.0-flash-001",
-                "rps": 5
+                "model_name": "intfloat/multilingual-e5-large-instruct",
+                "k": 10,
+                "similarity_threshold": 0.9,
             },
             "ARTICLE_SEARCH": {
                 "model_name": "intfloat/multilingual-e5-large-instruct",
@@ -80,13 +81,14 @@ class CXMTestSuite:
         """Test Knowledge Base Refinement task"""
         print("\nTesting KB Refinement...")
         inp = self.loader.load("KB_REFINEMENT")
+        inp['articles_df'] = inp['articles_df'][:self.test_size]
         results = {}
 
         for pair_key in ["contradictory_df", "similarity_df"]:
             inp[pair_key] = inp[pair_key][:self.test_size]
-            # Get predictions (using random for now as predictor not implemented)
+            
             all_articles = list({article for pair in inp[pair_key]["Pairs"] for article in pair})
-            predictions = [random.choices(all_articles, k=2) for _ in range(10 ** 3)]
+            predictions = self.predictor.predict_kb_refinement(inp, k = self.task_configs["KB_REFINEMENT"]["k"], similarity_threshold = self.task_configs["KB_REFINEMENT"]["similarity_threshold"], model_name = self.task_configs["KB_REFINEMENT"]["model_name"])
 
             # Evaluate results
             result = self.evaluator.evaluate("KB_REFINEMENT", inp, predictions, pair_key=pair_key)
