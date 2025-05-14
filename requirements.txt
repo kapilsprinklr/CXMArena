@@ -1,3 +1,9 @@
 pandas
 numpy
 datasets 
+vertexai
+thefuzz
+langchain
+sentence_transformers
+tqdm
+faiss-cpu

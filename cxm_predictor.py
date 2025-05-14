@@ -339,6 +339,47 @@ class CXMPredictor:
         results = [None if isinstance(x, str) else list(set([y['name'] for y in x])) for x in results]
         return results
 
+    def predict_kb_refinement(self, inp: dict, similarity_threshold: float = 0.9, k = 5, model_name: str = "intfloat/multilingual-e5-large-instruct") -> list[list[str]]:
+        """
+       Predicts similar pairs of articles for knowledge base refinement based on semantic similarity.
+    
+        Args:
+        inp (dict): Input dictionary containing 'articles_df' with document IDs and content.
+        similarity_threshold (float, optional): Threshold for cosine similarity to consider articles as similar.
+            Defaults to 0.8.
+        k (int, optional): Number of nearest neighbors to retrieve for each article. Defaults to 5.
+        model_name (str, optional): Name of the sentence transformer model to use for embeddings.
+            Defaults to "intfloat/multilingual-e5-large-instruct".
+    
+        Returns:
+        list[list[str]]: List of similar article pairs where each pair is a list of two string IDs.
+            Format: [[id1, id2], [id3, id4], ...]. Each pair represents articles with 
+            similarity above the threshold. The list may be empty if no similar pairs are found.
+        
+        """
+        articles_df = inp['articles_df']
+        article_ids = articles_df["document_id"].astype(str).tolist()
+        articles = articles_df["document_content"].tolist()
+        
+        embedding_model = SentenceTransformer(model_name)
+
+        article_embeddings = embedding_model.encode(
+            articles, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=True).cpu().numpy()
+
+        article_embeddings = np.array(article_embeddings).astype('float32')
+        index = faiss.IndexFlatIP(article_embeddings.shape[1])
+        index.add(article_embeddings)
+
+        similarities, indices = index.search(article_embeddings, k)
+        
+        similar_pairs = []
+        for i in range(indices.shape[0]):
+            for j, sim in zip(indices[i], similarities[i]):
+                if i < j and sim >= similarity_threshold:  
+                    similar_pairs.append([article_ids[i], article_ids[j]])
+
+        return similar_pairs
+
 
     async def predict(self, task_key: str, inp: dict , model_name = "gemini-2.0-flash-001") -> Union[List[Any], Dict]:
         key = task_key.upper()
@@ -359,5 +400,7 @@ class CXMPredictor:
             )
         elif key == "TOOL_CALLING":
             return await self.predict_tool_calling(inp, n_tools = 16, model_name = "gemini-2.0-flash-001", rps = 1.0)
+        elif key == "KB_REFINEMENT":
+            return self.predict_kb_refinement(inp, similarity_threshold=0.9, k = 5, model_name="intfloat/multilingual-e5-large-instruct")
 
         raise NotImplementedError(f"Task {task_key} not implemented in CXMPredictor.")
