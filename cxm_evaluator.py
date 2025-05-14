@@ -25,7 +25,6 @@ class CXMEvaluator:
 
     def __init__(self):
         self.task_prompt_files = {
-            "ARTICLE_SEARCH": "article_search_evaluation.txt",
             "MULTI_TURN_RAG": "multi_turn_rag_evaluation.txt",
             # Add more as needed
         }

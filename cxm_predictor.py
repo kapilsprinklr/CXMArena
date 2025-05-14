@@ -136,8 +136,8 @@ class CXMPredictor:
         )
 
         # Parse the responses
-        predictions = [parse_yes_no_list(resp) if resp else ['parsing_error' for _ in range(len(qs))] for resp, qs in zip(responses, question_lists)]
-
+        predictions = [parse_yes_no_list(resp) if resp else [] for resp in responses]
+        predictions = [pred if pred else ['parsing_error' for _ in range(len(qs))] for pred, qs in zip(predictions, question_lists)]
         return predictions
 
     async def predict_intent_fuzzy(
@@ -319,7 +319,20 @@ class CXMPredictor:
             rps=rps
         )
 
-        results = [None if isinstance(x, str) else list(set([y['name'] for y in x])) for x in results]
+        processed_results = []
+        for x in results:
+            if isinstance(x, str) or not x:  # Handle string or empty list
+                processed_results.append(None)
+                continue
+                
+            try:
+                tool_names = [y['name'] for y in x if isinstance(y, dict) and 'name' in y]
+                processed_results.append(list(set(tool_names)) if tool_names else None)
+            except:
+                print("parsing failed for tool call result:", x)
+                processed_results.append(None)
+                
+        results = processed_results
         return results
 
     def predict_kb_refinement(self, inp: dict, similarity_threshold: float = 0.9, k = 5, model_name: str = "intfloat/multilingual-e5-large-instruct") -> list[list[str]]:

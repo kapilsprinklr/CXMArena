@@ -50,7 +50,7 @@ class CXMTestSuite:
             },
             "TOOL_CALLING": {
                 "model_name": "gemini-2.0-flash-001",
-                "n_tools": 16,
+                "n_tools": [16, 32, 64, 96, 128],
                 "rps": 5
             }
         }
@@ -163,23 +163,25 @@ class CXMTestSuite:
         print(f"Multi-turn RAG Results - Categories: {result}")
         return result
 
-    async def test_tool_calling(self) -> float:
+    async def test_tool_calling(self) -> Dict:
         """Test Tool Calling task"""
         print("\nTesting Tool Calling...")
         inp = self.loader.load("TOOL_CALLING")
         inp["conversation_df"] = inp["conversation_df"][:self.test_size]
+        n_tools_list = self.task_configs["TOOL_CALLING"]["n_tools"]
+        predictions = {}
+        result = {}
+        for n_tools in n_tools_list:
+            predictions[n_tools] = await self.predictor.predict_tool_calling(
+                inp,
+                n_tools=n_tools,
+                model_name=self.task_configs["TOOL_CALLING"]["model_name"],
+                rps=self.task_configs["TOOL_CALLING"]["rps"]
+            )
 
-        # Get predictions
-        predictions = await self.predictor.predict_tool_calling(
-            inp,
-            n_tools=self.task_configs["TOOL_CALLING"]["n_tools"],
-            model_name=self.task_configs["TOOL_CALLING"]["model_name"],
-            rps=self.task_configs["TOOL_CALLING"]["rps"]
-        )
-
-        # Evaluate results
-        result = await self.evaluator.evaluate("TOOL_CALLING", inp, predictions)
-        print(f"Tool Calling Results - Precision: {result:.3f}")
+            # Evaluate results
+            result[n_tools] = await self.evaluator.evaluate("TOOL_CALLING", inp, predictions[n_tools])
+            print(f"Tool Calling Results (N_TOOLS:{n_tools}) - Precision: {result[n_tools]:.3f}")
         return result
 
     async def run_all_tests(self) -> Dict[str, Any]:
